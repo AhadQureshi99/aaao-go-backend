@@ -1,9 +1,11 @@
 // Importing required modules and models
 import User from "../models/userModel.js";
+import TempUser from "../models/tempUserModel.js"; // Import TempUser model
 import asyncHandler from "express-async-handler";
 import nodemailer from "nodemailer";
 import cloudinary from "cloudinary";
 import jwt from "jsonwebtoken"; // Import JWT for token generation
+import { v4 as uuidv4 } from "uuid"; // Import uuid for generating unique tempId
 
 // Validate environment variables for email configuration
 if (!process.env.MAIL_USER || !process.env.MAIL_PASS) {
@@ -46,27 +48,23 @@ const signupUser = asyncHandler(async (req, res) => {
     !email ||
     !phoneNumber ||
     !password ||
-    !sponsorBy
+    !sponsorBy ||
+    !gender
   ) {
     res.status(400); // Set status to 400 for bad request
     throw new Error("All fields are required"); // Throw error if any field is missing
   }
-  const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] }); // Check for existing user
-  if (userExists) {
-    res.status(400); // Set status to 400 for conflict
-    throw new Error("User already exists with this email or phone number"); // Throw error if user exists
-  }
+  // Check for existing TempUser and overwrite if found
+  let tempUser = await TempUser.findOne({ email });
+  const tempId = uuidv4(); // Generate unique tempId
   const otp = generateOTP(); // Generate OTP for verification
-  const user = await User.create({
-    firstName,
-    lastName,
-    email,
-    phoneNumber,
-    password,
-    sponsorBy,
-    gender,
-    otp, // Store OTP in user document
-  });
+  if (tempUser) {
+    tempUser.tempId = tempId;
+    tempUser.otp = otp;
+    await tempUser.save();
+  } else {
+    await TempUser.create({ email, phoneNumber, tempId, otp }); // Store temporary data
+  }
   await transporter.sendMail({
     from: `"Your App" <${process.env.MAIL_USER}>`, // Sender email
     to: email, // Recipient email
@@ -74,43 +72,98 @@ const signupUser = asyncHandler(async (req, res) => {
     text: `Hello ${firstName} ${lastName},\nYour OTP for account verification is: ${otp}\nPlease enter this OTP to verify within 10 minutes.`, // Plain text body
     html: `<h2>Hello ${firstName} ${lastName},</h2><p>Your OTP is: <strong>${otp}</strong></p><p>Verify within 10 minutes.</p>`, // HTML body
   });
+  res.status(200).json({
+    message: "OTP sent. Please verify to complete registration.",
+    tempId, // Return tempId for verification
+  }); // Respond without creating a full user
+});
+
+// Function to verify OTP and complete user registration
+const verifyOTPUser = asyncHandler(async (req, res) => {
+  // Extract tempId and OTP from request body
+  const { tempId, otp, firstName, lastName, password, sponsorBy, gender } =
+    req.body;
+  if (
+    !tempId ||
+    !otp ||
+    !firstName ||
+    !lastName ||
+    !password ||
+    !sponsorBy ||
+    !gender
+  ) {
+    res.status(400); // Set status to 400 for bad request
+    throw new Error("All fields including tempId and OTP are required"); // Throw error if any field is missing
+  }
+  const tempUser = await TempUser.findOne({ tempId }); // Find temporary user by tempId
+  if (!tempUser) {
+    res.status(404); // Set status to 404 for not found
+    throw new Error("Invalid or expired temporary session"); // Throw error if tempUser not found
+  }
+  if (Date.now() > tempUser.createdAt.getTime() + 10 * 60 * 1000) {
+    await TempUser.findByIdAndDelete(tempUser._id); // Clean up expired tempUser
+    res.status(400); // Set status to 400 for invalid request
+    throw new Error("OTP has expired. Please restart registration."); // Throw error if OTP is expired
+  }
+  if (tempUser.otp !== otp) {
+    res.status(400); // Set status to 400 for invalid request
+    throw new Error("Invalid OTP"); // Throw error if OTP is incorrect
+  }
+  // Check for existing verified user before creating new one
+  const userExists = await User.findOne({
+    $or: [{ email: tempUser.email }, { phoneNumber: tempUser.phoneNumber }],
+  });
+  if (userExists) {
+    res.status(400); // Set status to 400 for conflict
+    throw new Error("User already exists with this email or phone number"); // Throw error if user exists
+  }
+  // Create full user after OTP verification
+  const user = await User.create({
+    firstName,
+    lastName,
+    email: tempUser.email,
+    phoneNumber: tempUser.phoneNumber,
+    password,
+    sponsorBy,
+    gender,
+    isVerified: true,
+  });
   // Update sponsor tree and levels if sponsor exists
   const sponsor = await User.findOne({ sponsorId: sponsorBy });
   if (sponsor) {
     sponsor.sponsorTree.push(user._id);
     await updateSponsorLevels(sponsor._id);
   }
+  await TempUser.findByIdAndDelete(tempUser._id); // Clean up temporary user
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  const sponsoredUsers = user.sponsorTree
+    .map((s) => `${s.firstName} ${s.lastName}`)
+    .join(", ");
   res.status(201).json({
-    message: "User registered. Please verify your OTP.",
+    message: "Registration completed successfully",
+    token,
     userId: user._id,
-    sponsorId: user.sponsorId, // Include sponsorId for reference
-  }); // Respond without token
-});
-
-// Function to verify OTP and mark user as verified
-const verifyOTPUser = asyncHandler(async (req, res) => {
-  // Extract userId and OTP from request body
-  const { userId, otp } = req.body;
-  const user = await User.findOne({ _id: userId }); // Find user by ID
-  if (!user) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("User not found"); // Throw error if user doesn't exist
-  }
-  if (user.isVerified) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("User already verified"); // Throw error if user is already verified
-  }
-  if (
-    user.otp !== otp ||
-    Date.now() > user.createdAt.getTime() + 10 * 60 * 1000
-  ) {
-    res.status(400); // Set status to 400 for invalid request
-    throw new Error("Invalid or expired OTP"); // Throw error if OTP is invalid or expired
-  }
-  user.isVerified = true; // Mark user as verified
-  user.otp = null; // Clear OTP after verification
-  await user.save(); // Save updated user document
-  res.status(200).json({ message: "OTP verified successfully" }); // Respond without token
+    sponsorId: user.sponsorId,
+    level: user.level,
+    sponsorTree: user.sponsorTree.map((s) => ({
+      id: s._id,
+      name: `${s.firstName} ${s.lastName}`,
+    })),
+    sponsoredUsers: sponsoredUsers || "No sponsored users",
+    user: {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      sponsorBy: user.sponsorBy,
+      country: user.country,
+      kycLevel: user.kycLevel,
+      gender: user.gender,
+    },
+  });
 });
 
 // Function to handle user login
@@ -130,7 +183,7 @@ const loginUser = asyncHandler(async (req, res) => {
   }
   if (!user.isVerified) {
     res.status(403); // Set status to 403 for forbidden
-    throw new Error("Please verify your email with OTP"); // Throw error if user not verified
+    throw new Error("User not verified. Please complete registration."); // Throw error if user not verified
   }
   if (!(await user.comparePassword(password))) {
     res.status(401); // Set status to 401 for unauthorized
@@ -286,7 +339,6 @@ const submitKYC = asyncHandler(async (req, res) => {
   };
   user.selfieImage = selfieUpload.secure_url; // Store selfie URL
   user.kycLevel = 1; // Set KYC level to 1
-  user.isVerified = true; // Mark user as verified
   await user.save(); // Save updated user document
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
@@ -310,28 +362,28 @@ const logout = async (req, res) => {
 
 // Function to resend OTP to user's email
 const resendOtp = asyncHandler(async (req, res) => {
-  // Extract userId from request body
-  const { userId } = req.body;
-  const user = await User.findById(userId); // Find user by ID
-  if (!user) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("User not found"); // Throw error if user doesn't exist
-  }
-  if (user.isVerified) {
+  // Extract tempId from request body
+  const { tempId } = req.body;
+  if (!tempId) {
     res.status(400); // Set status to 400 for bad request
-    throw new Error("User already verified"); // Throw error if user is already verified
+    throw new Error("tempId is required"); // Throw error if tempId is missing
+  }
+  const tempUser = await TempUser.findOne({ tempId }); // Find temporary user by tempId
+  if (!tempUser) {
+    res.status(404); // Set status to 404 for not found
+    throw new Error("Invalid or expired temporary session"); // Throw error if tempUser not found
   }
   const newOtp = generateOTP(); // Generate new OTP
-  user.otp = newOtp; // Update OTP in user document
-  await user.save(); // Save updated user document
+  tempUser.otp = newOtp; // Update OTP in tempUser document
+  await tempUser.save(); // Save updated tempUser document
   await transporter.sendMail({
     from: `"Your App" <${process.env.MAIL_USER}>`, // Sender email
-    to: user.email, // Recipient email
+    to: tempUser.email, // Recipient email
     subject: "Your New OTP for Account Verification", // Email subject
-    text: `Hello ${user.firstName} ${user.lastName},\nYour new OTP for account verification is: ${newOtp}\nPlease enter this OTP to verify within 10 minutes.`, // Plain text body
-    html: `<h2>Hello ${user.firstName} ${user.lastName},</h2><p>Your new OTP is: <strong>${newOtp}</strong></p><p>Verify within 10 minutes.</p>`, // HTML body
+    text: `Hello ${firstName} ${lastName},\nYour new OTP for account verification is: ${newOtp}\nPlease enter this OTP to verify within 10 minutes.`, // Plain text body
+    html: `<h2>Hello ${firstName} ${lastName},</h2><p>Your new OTP is: <strong>${newOtp}</strong></p><p>Verify within 10 minutes.</p>`, // HTML body
   });
-  res.status(200).json({ message: "New OTP sent successfully" }); // Respond without token
+  res.status(200).json({ message: "New OTP sent successfully", tempId }); // Respond with tempId
 });
 
 // Helper function to update sponsor levels recursively
