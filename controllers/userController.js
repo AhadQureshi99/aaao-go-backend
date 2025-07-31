@@ -29,8 +29,15 @@ const generateOTP = () =>
 
 // Function to handle user signup and send OTP via email
 const signupUser = asyncHandler(async (req, res) => {
-  const { firstName, lastName, email, phoneNumber, password, sponsorBy } =
-    req.body;
+  const {
+    firstName,
+    lastName,
+    email,
+    phoneNumber,
+    password,
+    sponsorBy,
+    gender,
+  } = req.body;
   if (
     !firstName ||
     !lastName ||
@@ -55,6 +62,7 @@ const signupUser = asyncHandler(async (req, res) => {
     phoneNumber,
     password,
     sponsorBy,
+    gender,
     otp,
   });
   await transporter.sendMail({
@@ -139,6 +147,7 @@ const loginUser = asyncHandler(async (req, res) => {
       sponsorBy: user.sponsorBy,
       country: user.country,
       kycLevel: user.kycLevel,
+      gender: user.gender, // Include gender in response
     },
   });
 });
@@ -213,7 +222,7 @@ cloudinary.config({
   api_secret: process.env.API_Secret,
 });
 const submitKYC = asyncHandler(async (req, res) => {
-  const { userId, fullName, country } = req.body;
+  const { userId, fullName, country, gender } = req.body;
   const frontImage = req.files?.frontImage;
   const backImage = req.files?.backImage;
   const selfieImage = req.files?.selfieImage; // New field for live selfie
@@ -252,6 +261,7 @@ const submitKYC = asyncHandler(async (req, res) => {
   user.firstName = firstName;
   user.lastName = lastName;
   user.country = country;
+  user.gender = gender; // Set gender from KYC
   user.cnicImages = {
     front: frontUpload.secure_url,
     back: backUpload.secure_url,

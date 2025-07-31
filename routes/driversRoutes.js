@@ -1,50 +1,59 @@
-// Importing required modules and controllers
 import express from "express";
 import {
   uploadLicense,
   handleVehicleDecision,
   registerVehicle,
+  updateVehicle,
+  getUserVehicleInfo,
+  getCurrentUser,
+  logout,
 } from "../controllers/driversController.js";
+import authHandler from "../middlewares/authMIddleware.js";
 import multer from "multer";
 import path from "path";
-import authHandler from "../middlewares/authMIddleware.js"; // Import authentication middleware
 
-// Multer setup for handling file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"), // Sets upload directory
+  destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) =>
-    cb(null, Date.now() + path.extname(file.originalname)), // Generates unique filename
+    cb(null, Date.now() + path.extname(file.originalname)),
 });
 const upload = multer({ storage });
 
-// Fields for file uploads with maximum counts
-const uploadFields = [
-  { name: "licenseImage", maxCount: 1 },
-  { name: "vehicleRegistrationCardFront", maxCount: 1 },
-  { name: "vehicleRegistrationCardBack", maxCount: 1 },
-  { name: "roadAuthorityCertificate", maxCount: 1 },
-  { name: "insuranceCertificate", maxCount: 1 },
-  { name: "vehicleImages", maxCount: 4 },
-];
-
-// Route to upload driver's license for KYC Level 2, requiring authentication and KYC Level 1
 const router = express.Router();
+
 router.post(
   "/upload-license",
   authHandler,
   upload.single("licenseImage"),
   uploadLicense
 );
-
-// Route to handle vehicle ownership decision, requiring authentication and KYC Level 2
 router.post("/vehicle-decision", authHandler, handleVehicleDecision);
-
-// Route to register vehicle, requiring authentication and KYC Level 2
 router.post(
   "/register-vehicle",
   authHandler,
-  upload.fields(uploadFields),
+  upload.fields([
+    { name: "vehicleRegistrationCardFront", maxCount: 1 },
+    { name: "vehicleRegistrationCardBack", maxCount: 1 },
+    { name: "roadAuthorityCertificate", maxCount: 1 },
+    { name: "insuranceCertificate", maxCount: 1 },
+    { name: "vehicleImages", maxCount: 4 },
+  ]),
   registerVehicle
 );
+router.post(
+  "/update-vehicle",
+  authHandler,
+  upload.fields([
+    { name: "vehicleRegistrationCardFront", maxCount: 1 },
+    { name: "vehicleRegistrationCardBack", maxCount: 1 },
+    { name: "roadAuthorityCertificate", maxCount: 1 },
+    { name: "insuranceCertificate", maxCount: 1 },
+    { name: "vehicleImages", maxCount: 4 },
+  ]),
+  updateVehicle
+);
+router.get("/user-vehicle-info", authHandler, getUserVehicleInfo);
+router.get("/get-current-user", authHandler, getCurrentUser);
+router.post("/logout", authHandler, logout);
 
 export default router;

@@ -51,9 +51,19 @@ const userSchema = new mongoose.Schema({
     type: String, // URL for live selfie image (Cloudinary)
     required: false,
   },
+  licenseImage: {
+    type: String, // URL for driver's license image (Cloudinary)
+    required: false,
+  },
+  gender: {
+    type: String, // Optional gender field
+    required: false,
+    enum: ["Male", "Female", "Other"], // Restrict to these values
+    trim: true,
+  },
   kycLevel: {
     type: Number,
-    default: 0, // 0 = unverified, 1 = KYC Level 1 completed
+    default: 0, // 0 = unverified, 1 = KYC Level 1 completed, 2 = KYC Level 2 completed
   },
   otp: {
     type: String,

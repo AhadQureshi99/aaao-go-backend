@@ -1,26 +1,50 @@
-// Importing required module for MongoDB schema definition
 import mongoose from "mongoose";
 
-// Defining the vehicle schema with associated fields
 const vehicleSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Reference to the user owning the vehicle
-  licenseImage: { type: String }, // URL for license image (Cloudinary)
-  vehicleRegistrationCard: {
-    front: { type: String }, // URL for front of registration card (Cloudinary)
-    back: { type: String }, // URL for back of registration card (Cloudinary)
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
   },
-  roadAuthorityCertificate: { type: String }, // URL for road authority certificate (Cloudinary)
-  vehicleOwnerName: { type: String }, // Name of the vehicle owner
-  companyName: { type: String }, // Company name (if applicable)
-  vehiclePlateNumber: { type: String }, // Vehicle's plate number
-  vehicleMakeModel: { type: String }, // Make and model of the vehicle
-  chassisNumber: { type: String }, // Vehicle's chassis number
-  vehicleColor: { type: String }, // Color of the vehicle
-  registrationExpiryDate: { type: Date }, // Expiry date of vehicle registration
-  insuranceCertificate: { type: String }, // URL for insurance certificate (Cloudinary)
-  vehicleType: { type: String }, // Type of vehicle (e.g., car, truck)
-  vehicleImages: [{ type: String }], // Array of URLs for additional vehicle images (Cloudinary)
-  createdAt: { type: Date, default: Date.now }, // Automatically sets creation timestamp
+  licenseImage: {
+    type: String, // URL from Cloudinary, now set only via uploadLicense
+    required: false,
+  },
+  vehicleRegistrationCard: {
+    front: { type: String, required: false }, // URL from Cloudinary
+    back: { type: String, required: false }, // URL from Cloudinary
+  },
+  roadAuthorityCertificate: { type: String, required: false }, // URL from Cloudinary
+  insuranceCertificate: { type: String, required: false }, // URL from Cloudinary
+  vehicleImages: [{ type: String, required: false }], // Array of URLs from Cloudinary
+  vehicleOwnerName: { type: String, required: false },
+  companyName: { type: String, required: false },
+  vehiclePlateNumber: { type: String, required: false },
+  vehicleMakeModel: {
+    type: String, // e.g., "Toyota Camry 2005"
+    required: false,
+    match: [
+      /^[A-Za-z\s]+[A-Za-z\s]+\d{4}$/,
+      "Format should be 'Make Model Year' (e.g., 'Toyota Camry 2005')",
+    ],
+  },
+  chassisNumber: { type: String, required: false },
+  vehicleColor: { type: String, required: false },
+  registrationExpiryDate: { type: Date, required: false },
+  vehicleType: {
+    type: String,
+    enum: ["bike", "minicar", "accar", "luxurycar"],
+    required: false,
+  },
+  wheelchair: {
+    type: Boolean,
+    default: false,
+    required: false,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 export default mongoose.model("Vehicle", vehicleSchema);
