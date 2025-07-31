@@ -6,7 +6,6 @@ import {
   updateVehicle,
   getUserVehicleInfo,
   getCurrentUser,
-  logout,
 } from "../controllers/driversController.js";
 import authHandler from "../middlewares/authMIddleware.js";
 import multer from "multer";
@@ -54,6 +53,6 @@ router.post(
 );
 router.get("/user-vehicle-info", authHandler, getUserVehicleInfo);
 router.get("/get-current-user", authHandler, getCurrentUser);
-router.post("/logout", authHandler, logout);
+
 
 export default router;

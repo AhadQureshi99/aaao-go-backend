@@ -401,16 +401,7 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-// Handle user logout by clearing the token cookie
-const logout = async (req, res) => {
-  try {
-    // Clear the token cookie
-    res.clearCookie("token", { httpOnly: true, maxAge: 0 });
-    res.status(200).json({ message: "Logged out successfully" });
-  } catch (error) {
-    res.status(500).json({ message: error.message, token: req.cookies.token });
-  }
-};
+
 
 // Export all controller functions
 export {
@@ -420,5 +411,5 @@ export {
   updateVehicle,
   getUserVehicleInfo,
   getCurrentUser,
-  logout,
+  
 };

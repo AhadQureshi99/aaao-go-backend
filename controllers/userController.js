@@ -76,13 +76,11 @@ const signupUser = asyncHandler(async (req, res) => {
     expiresIn: "1h",
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 }); // 1 hour in ms
-  res
-    .status(201)
-    .json({
-      message: "User registered. Verify OTP sent to your email.",
-      userId: user._id,
-      token,
-    });
+  res.status(201).json({
+    message: "User registered. Verify OTP sent to your email.",
+    userId: user._id,
+    token,
+  });
 });
 
 // Function to verify OTP and mark user as verified
@@ -279,6 +277,17 @@ const submitKYC = asyncHandler(async (req, res) => {
     .json({ message: "KYC Level 1 completed successfully", token });
 });
 
+// Handle user logout by clearing the token cookie
+const logout = async (req, res) => {
+  try {
+    // Clear the token cookie
+    res.clearCookie("token", { httpOnly: true, maxAge: 0 });
+    res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message, token: req.cookies.token });
+  }
+};
+
 export {
   signupUser,
   verifyOTPUser,
@@ -286,4 +295,5 @@ export {
   forgotPassword,
   resetPassword,
   submitKYC,
+  logout,
 };

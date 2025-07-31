@@ -7,6 +7,7 @@ import {
   forgotPassword,
   resetPassword,
   submitKYC,
+  logout,
 } from "../controllers/userController.js";
 import multer from "multer";
 import path from "path";
@@ -47,5 +48,5 @@ router.post(
   ]),
   submitKYC
 );
-
+router.post("/logout", authHandler, logout);
 export default router;
