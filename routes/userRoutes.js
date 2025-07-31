@@ -8,6 +8,7 @@ import {
   resetPassword,
   submitKYC,
   logout,
+  resendOtp,
 } from "../controllers/userController.js";
 import multer from "multer";
 import path from "path";
@@ -19,14 +20,14 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) =>
     cb(null, Date.now() + path.extname(file.originalname)), // Generates unique filename
 });
-const upload = multer({ storage });
+const upload = multer({ storage }); // Initialize multer with storage configuration
 
 // Route to handle user signup (no authentication required for initial signup)
 const router = express.Router();
 router.post("/signup", signupUser);
 
 // Route to verify OTP for user account, requiring authentication
-router.post("/verify-otp", authHandler, verifyOTPUser);
+router.post("/verify-otp", verifyOTPUser);
 
 // Route to handle user login (no authentication required for initial login)
 router.post("/login", loginUser);
@@ -48,5 +49,11 @@ router.post(
   ]),
   submitKYC
 );
+
 router.post("/logout", authHandler, logout);
+
+// Route to resend OTP to user's email, requiring authentication
+router.post("/resend-otp", resendOtp);
+
+// Export router for use in main application
 export default router;

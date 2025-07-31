@@ -1,4 +1,4 @@
-// Importing required modules for MongoDB schema definition
+// Importing required modules for MongoDB schema definition and password hashing
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 
@@ -32,6 +32,26 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, "Password is required"], // Ensures password is provided
     minlength: [6, "Password must be at least 6 characters"], // Minimum password length
+  },
+  sponsorId: {
+    type: String,
+    unique: true, // Ensures sponsorId is unique
+    required: true, // Sponsor ID is mandatory
+    default: function () {
+      return `${this._id.toString().slice(-6)}${Date.now()
+        .toString()
+        .slice(-4)}`; // Generate unique sponsor ID
+    },
+  },
+  sponsorTree: {
+    type: [mongoose.Schema.Types.ObjectId], // Array of user IDs for sponsorship tree
+    ref: "User",
+    default: [], // Empty by default
+  },
+  level: {
+    type: Number,
+    default: 0, // Starts at level 0
+    max: 4, // Maximum level is 4
   },
   sponsorBy: {
     type: String,
