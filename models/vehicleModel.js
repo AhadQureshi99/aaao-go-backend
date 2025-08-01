@@ -33,7 +33,7 @@ const vehicleSchema = new mongoose.Schema({
   registrationExpiryDate: { type: Date, required: false },
   vehicleType: {
     type: String,
-    enum: ["bike", "minicar", "accar", "luxurycar"],
+    enum: ["bike", "minicar", "accar", "luxurycar","premium"],
     required: false,
   },
   wheelchair: {
