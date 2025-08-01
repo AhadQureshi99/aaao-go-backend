@@ -20,8 +20,11 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
 }); // Set up email transporter
 transporter.verify((error) => {
-  if (error) console.error("Nodemailer configuration error:", error.message);
-  // Log configuration errors
+  if (error)
+    console.error(
+      "Nodemailer configuration error:",
+      error.message
+    ); // Log configuration errors
   else console.log("Nodemailer is ready to send emails"); // Confirm transporter is ready
 });
 
@@ -176,7 +179,7 @@ const verifyOTPUser = asyncHandler(async (req, res) => {
   await user.save();
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: process.env.JWT_EXPIRY,
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   const sponsoredUsers = user.sponsorTree
@@ -231,7 +234,7 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new Error("Invalid password");
   }
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: process.env.JWT_EXPIRY,
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   const sponsoredUsers = user.sponsorTree
@@ -293,7 +296,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
     html: `<h2>Hello ${user.firstName} ${user.lastName},</h2><p>Your OTP is: <strong>${resetOtp}</strong></p><p>Use within 10 minutes.</p>`,
   });
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: process.env.JWT_EXPIRY,
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   res.status(200).json({ message: "Reset OTP sent to email", token });
@@ -332,7 +335,7 @@ const resetPassword = asyncHandler(async (req, res) => {
   user.resetOtpExpires = null;
   await user.save();
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: process.env.JWT_EXPIRY,
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   res.status(200).json({ message: "Password reset successful", token });
@@ -404,7 +407,7 @@ const submitKYC = asyncHandler(async (req, res) => {
   user.kycLevel = 1;
   await user.save();
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "30d",
+    expiresIn: process.env.JWT_EXPIRY,
   });
   res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   res

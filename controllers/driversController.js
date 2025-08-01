@@ -67,7 +67,7 @@ const uploadLicense = async (req, res) => {
 
     // Generate new token and set cookie
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({
@@ -100,7 +100,7 @@ const handleVehicleDecision = async (req, res) => {
     user.role = "driver";
     await user.save();
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({
@@ -112,7 +112,7 @@ const handleVehicleDecision = async (req, res) => {
   } else if (hasVehicle === "yes") {
     // Prompt for vehicle registration if yes
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({
@@ -217,7 +217,7 @@ const registerVehicle = async (req, res) => {
 
     // Generate new token and respond
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(201).json({
@@ -310,7 +310,7 @@ const updateVehicle = async (req, res) => {
 
     // Generate new token and respond
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({
@@ -355,7 +355,7 @@ const getUserVehicleInfo = async (req, res) => {
 
     // Generate new token and respond
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({ ...response, token });
@@ -380,7 +380,7 @@ const getCurrentUser = async (req, res) => {
 
     // Prepare response with user details
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
+      expiresIn: process.env.JWT_EXPIRY,
     });
     res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
     res.status(200).json({
