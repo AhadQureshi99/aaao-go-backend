@@ -20,11 +20,8 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
 }); // Set up email transporter
 transporter.verify((error) => {
-  if (error)
-    console.error(
-      "Nodemailer configuration error:",
-      error.message
-    ); // Log configuration errors
+  if (error) console.error("Nodemailer configuration error:", error.message);
+  // Log configuration errors
   else console.log("Nodemailer is ready to send emails"); // Confirm transporter is ready
 });
 
@@ -181,7 +178,12 @@ const verifyOTPUser = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.cookie("token", token, {
+    httpOnly: true,
+    maxAge: 3600000, // 1 hour
+    sameSite: "lax", // Adjust for local dev; use "none" with secure: true for cross-origin if needed
+    secure: process.env.NODE_ENV === "production", // Only secure in production
+  });
   const sponsoredUsers = user.sponsorTree
     .map((s) => `${s.firstName} ${s.lastName}`)
     .join(", ");
@@ -236,7 +238,6 @@ const loginUser = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  
   const sponsoredUsers = user.sponsorTree
     .map((s) => `${s.firstName} ${s.lastName}`)
     .join(", ");
@@ -246,30 +247,36 @@ const loginUser = asyncHandler(async (req, res) => {
     sponsorName = sponsor ? `${sponsor.firstName} ${sponsor.lastName}` : null;
   }
   res
-  .cookie("token", token, { httpOnly: true, maxAge: 3600000 })
-  .status(200).json({
-    message: "Login successful",
-    token,
-    userId: user._id,
-    sponsorId: user.sponsorId,
-    level: user.level,
-    sponsorTree: user.sponsorTree.map((s) => ({
-      id: s._id,
-      name: `${s.firstName} ${s.lastName}`,
-    })),
-    sponsoredUsers: sponsoredUsers || "No sponsored users",
-    sponsorName: sponsorName, // Add sponsor name to response
-    user: {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      sponsorBy: user.sponsorBy,
-      country: user.country,
-      kycLevel: user.kycLevel,
-      gender: user.gender,
-    },
-  });
+    .cookie("token", token, {
+      httpOnly: true,
+      maxAge: 3600000, // 1 hour
+      sameSite: "lax", // Adjust for local dev; use "none" with secure: true for cross-origin if needed
+      secure: process.env.NODE_ENV === "production", // Only secure in production
+    })
+    .status(200)
+    .json({
+      message: "Login successful",
+      token,
+      userId: user._id,
+      sponsorId: user.sponsorId,
+      level: user.level,
+      sponsorTree: user.sponsorTree.map((s) => ({
+        id: s._id,
+        name: `${s.firstName} ${s.lastName}`,
+      })),
+      sponsoredUsers: sponsoredUsers || "No sponsored users",
+      sponsorName: sponsorName, // Add sponsor name to response
+      user: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        sponsorBy: user.sponsorBy,
+        country: user.country,
+        kycLevel: user.kycLevel,
+        gender: user.gender,
+      },
+    });
 });
 
 // Function to handle forgot password request and send OTP
@@ -300,7 +307,12 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.cookie("token", token, {
+    httpOnly: true,
+    maxAge: 3600000, // 1 hour
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   res.status(200).json({ message: "Reset OTP sent to email", token });
 });
 
@@ -339,7 +351,12 @@ const resetPassword = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.cookie("token", token, {
+    httpOnly: true,
+    maxAge: 3600000, // 1 hour
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   res.status(200).json({ message: "Password reset successful", token });
 });
 
@@ -411,7 +428,12 @@ const submitKYC = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.cookie("token", token, {
+    httpOnly: true,
+    maxAge: 3600000, // 1 hour
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   res
     .status(200)
     .json({ message: "KYC Level 1 completed successfully", token });
@@ -420,10 +442,21 @@ const submitKYC = asyncHandler(async (req, res) => {
 // Handle user logout by clearing the token cookie
 const logout = async (req, res) => {
   try {
-    res.clearCookie("token", { httpOnly: true, maxAge: 0 });
+    // Clear the cookie regardless of its existence
+    res.clearCookie("token", {
+      httpOnly: true,
+      maxAge: 0,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    // Check if token exists in request cookies and log for debugging
+    if (!req.cookies || !req.cookies.token) {
+      console.log("No token found in request cookies during logout");
+    }
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
-    res.status(500).json({ message: error.message, token: req.cookies.token });
+    console.error("Logout error:", error.message);
+    res.status(500).json({ message: "Logout failed", error: error.message });
   }
 };
 
