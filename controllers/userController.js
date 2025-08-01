@@ -1,11 +1,10 @@
 // Importing required modules and models
 import User from "../models/userModel.js";
-import TempUser from "../models/tempUserModel.js"; // Import TempUser model
 import asyncHandler from "express-async-handler";
 import nodemailer from "nodemailer";
 import cloudinary from "cloudinary";
 import jwt from "jsonwebtoken"; // Import JWT for token generation
-import { v4 as uuidv4 } from "uuid"; // Import uuid for generating unique tempId
+import { v4 as uuidv4 } from "uuid"; // Import uuid (kept for potential future use)
 
 // Validate environment variables for email configuration
 if (!process.env.MAIL_USER || !process.env.MAIL_PASS) {
@@ -42,99 +41,140 @@ const signupUser = asyncHandler(async (req, res) => {
     sponsorBy,
     gender,
   } = req.body;
-  if (
-    !firstName ||
-    !lastName ||
-    !email ||
-    !phoneNumber ||
-    !password ||
-    !sponsorBy ||
-    !gender
-  ) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("All fields are required"); // Throw error if any field is missing
+
+  // Check for missing required fields
+  if (!firstName) {
+    res.status(400);
+    throw new Error("First name is required");
   }
-  // Check for existing TempUser and overwrite if found
-  let tempUser = await TempUser.findOne({ email });
-  const tempId = uuidv4(); // Generate unique tempId
-  const otp = generateOTP(); // Generate OTP for verification
-  if (tempUser) {
-    tempUser.tempId = tempId;
-    tempUser.otp = otp;
-    await tempUser.save();
+  if (!lastName) {
+    res.status(400);
+    throw new Error("Last name is required");
+  }
+  if (!email) {
+    res.status(400);
+    throw new Error("Email is required");
+  }
+  if (!phoneNumber) {
+    res.status(400);
+    throw new Error("Phone number is required");
+  }
+  if (!password) {
+    res.status(400);
+    throw new Error("Password is required");
+  }
+  if (!gender) {
+    res.status(400);
+    throw new Error("Gender is required");
+  }
+
+  // Validate sponsorBy if provided
+  if (sponsorBy) {
+    const sponsor = await User.findOne({ sponsorId: sponsorBy });
+    if (!sponsor) {
+      res.status(400);
+      throw new Error("Invalid sponsor ID");
+    }
+  }
+
+  // Check if email or phoneNumber already exists (partial user or verified)
+  const existingUser = await User.findOne({
+    $or: [{ email }, { phoneNumber }],
+  });
+  let otp;
+  if (existingUser) {
+    if (existingUser.isVerified) {
+      res.status(400);
+      throw new Error("A user with this email or phone number already exists");
+    }
+    // Update existing unverified user
+    otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    existingUser.otp = otp;
+    existingUser.otpExpires = otpExpires;
+    existingUser.firstName = firstName;
+    existingUser.lastName = lastName;
+    existingUser.phoneNumber = phoneNumber;
+    existingUser.password = password;
+    existingUser.sponsorBy = sponsorBy || null;
+    existingUser.gender = gender;
+    await existingUser.save();
+    console.log("Updated existing user:", existingUser.email, existingUser.otp);
   } else {
-    await TempUser.create({ email, phoneNumber, tempId, otp }); // Store temporary data
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      password,
+      sponsorBy: sponsorBy || null,
+      gender,
+      otp: generateOTP(),
+      otpExpires: new Date(Date.now() + 10 * 60 * 1000),
+      isVerified: false,
+    });
+    otp = user.otp; // Assign the OTP from the created user
+    console.log("Created new user:", user.email, user.otp);
   }
+
   await transporter.sendMail({
     from: `"Your App" <${process.env.MAIL_USER}>`, // Sender email
     to: email, // Recipient email
     subject: "Your OTP for Account Verification", // Email subject
-    text: `Hello ${firstName} ${lastName},\nYour OTP for account verification is: ${otp}\nPlease enter this OTP to verify within 10 minutes.`, // Plain text body
-    html: `<h2>Hello ${firstName} ${lastName},</h2><p>Your OTP is: <strong>${otp}</strong></p><p>Verify within 10 minutes.</p>`, // HTML body
+    text: `Hello ${firstName} ${lastName},\nYour OTP for account verification is: ${otp}\nPlease enter this OTP to verify within 10 minutes.`,
+    html: `<h2>Hello ${firstName} ${lastName},</h2><p>Your OTP is: <strong>${otp}</strong></p><p>Verify within 10 minutes.</p>`,
   });
   res.status(200).json({
     message: "OTP sent. Please verify to complete registration.",
-    tempId, // Return tempId for verification
-  }); // Respond without creating a full user
+  });
 });
 
 // Function to verify OTP and complete user registration
 const verifyOTPUser = asyncHandler(async (req, res) => {
-  // Extract tempId and OTP from request body
-  const { tempId, otp, firstName, lastName, password, sponsorBy, gender } =
-    req.body;
-  if (
-    !tempId ||
-    !otp ||
-    !firstName ||
-    !lastName ||
-    !password ||
-    !sponsorBy ||
-    !gender
-  ) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("All fields including tempId and OTP are required"); // Throw error if any field is missing
+  // Extract email and OTP from request body
+  const { email, otp } = req.body;
+
+  // Check for missing required fields
+  if (!email) {
+    res.status(400);
+    throw new Error("Email is required");
   }
-  const tempUser = await TempUser.findOne({ tempId }); // Find temporary user by tempId
-  if (!tempUser) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("Invalid or expired temporary session"); // Throw error if tempUser not found
+  if (!otp) {
+    res.status(400);
+    throw new Error("OTP is required");
   }
-  if (Date.now() > tempUser.createdAt.getTime() + 10 * 60 * 1000) {
-    await TempUser.findByIdAndDelete(tempUser._id); // Clean up expired tempUser
-    res.status(400); // Set status to 400 for invalid request
-    throw new Error("OTP has expired. Please restart registration."); // Throw error if OTP is expired
+
+  const user = await User.findOne({ email });
+  console.log("Searching for user with email:", email, "Found:", user);
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found. Please sign up first.");
   }
-  if (tempUser.otp !== otp) {
-    res.status(400); // Set status to 400 for invalid request
-    throw new Error("Invalid OTP"); // Throw error if OTP is incorrect
+  if (Date.now() > user.otpExpires || !user.otpExpires) {
+    res.status(400);
+    throw new Error("OTP has expired. Please sign up again.");
   }
-  // Check for existing verified user before creating new one
-  const userExists = await User.findOne({
-    $or: [{ email: tempUser.email }, { phoneNumber: tempUser.phoneNumber }],
-  });
-  if (userExists) {
-    res.status(400); // Set status to 400 for conflict
-    throw new Error("User already exists with this email or phone number"); // Throw error if user exists
+  if (user.otp !== otp) {
+    res.status(400);
+    throw new Error("Invalid OTP");
   }
-  // Create full user after OTP verification
-  const user = await User.create({
-    firstName,
-    lastName,
-    email: tempUser.email,
-    phoneNumber: tempUser.phoneNumber,
-    password,
-    sponsorBy,
-    gender,
-    isVerified: true,
-  });
-  // Update sponsor tree and levels if sponsor exists
-  const sponsor = await User.findOne({ sponsorId: sponsorBy });
-  if (sponsor) {
-    sponsor.sponsorTree.push(user._id);
-    await updateSponsorLevels(sponsor._id);
+
+  // Complete registration (sponsor validation already done in signup)
+  let sponsorName = null;
+  if (user.sponsorBy) {
+    const sponsor = await User.findOne({ sponsorId: user.sponsorBy });
+    if (sponsor) {
+      sponsor.sponsorTree.push(user._id);
+      await sponsor.save();
+      sponsorName = `${sponsor.firstName} ${sponsor.lastName}`;
+    }
   }
-  await TempUser.findByIdAndDelete(tempUser._id); // Clean up temporary user
+
+  user.isVerified = true;
+  user.otp = null;
+  user.otpExpires = null;
+  await user.save();
+
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
@@ -153,6 +193,7 @@ const verifyOTPUser = asyncHandler(async (req, res) => {
       name: `${s.firstName} ${s.lastName}`,
     })),
     sponsoredUsers: sponsoredUsers || "No sponsored users",
+    sponsorName: sponsorName, // Add sponsor name to response
     user: {
       firstName: user.firstName,
       lastName: user.lastName,
@@ -171,34 +212,39 @@ const loginUser = asyncHandler(async (req, res) => {
   // Extract login credentials from request body
   const { email, phoneNumber, password } = req.body;
   if ((!email && !phoneNumber) || !password) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("Email or phone number and password are required"); // Throw error if credentials are missing
+    res.status(400);
+    throw new Error("Email or phone number and password are required");
   }
   const user = await User.findOne({
     $or: [{ email }, { phoneNumber }],
-  }).populate("sponsorTree", "firstName lastName"); // Find user by email or phone with populated sponsorTree
+  }).populate("sponsorTree", "firstName lastName");
   if (!user) {
-    res.status(401); // Set status to 401 for unauthorized
-    throw new Error("Invalid email or phone number"); // Throw error if user not found
+    res.status(401);
+    throw new Error("Invalid email or phone number");
   }
   if (!user.isVerified) {
-    res.status(403); // Set status to 403 for forbidden
-    throw new Error("User not verified. Please complete registration."); // Throw error if user not verified
+    res.status(403);
+    throw new Error("User not verified. Please complete registration.");
   }
   if (!(await user.comparePassword(password))) {
-    res.status(401); // Set status to 401 for unauthorized
-    throw new Error("Invalid password"); // Throw error if password doesn't match
+    res.status(401);
+    throw new Error("Invalid password");
   }
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
-  }); // Generate JWT token
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 }); // Set cookie with 1-hour expiry
+  });
+  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   const sponsoredUsers = user.sponsorTree
     .map((s) => `${s.firstName} ${s.lastName}`)
     .join(", ");
+  let sponsorName = null;
+  if (user.sponsorBy) {
+    const sponsor = await User.findOne({ sponsorId: user.sponsorBy });
+    sponsorName = sponsor ? `${sponsor.firstName} ${sponsor.lastName}` : null;
+  }
   res.status(200).json({
     message: "Login successful",
-    token, // Include token in response
+    token,
     userId: user._id,
     sponsorId: user.sponsorId,
     level: user.level,
@@ -207,6 +253,7 @@ const loginUser = asyncHandler(async (req, res) => {
       name: `${s.firstName} ${s.lastName}`,
     })),
     sponsoredUsers: sponsoredUsers || "No sponsored users",
+    sponsorName: sponsorName, // Add sponsor name to response
     user: {
       firstName: user.firstName,
       lastName: user.lastName,
@@ -215,74 +262,80 @@ const loginUser = asyncHandler(async (req, res) => {
       sponsorBy: user.sponsorBy,
       country: user.country,
       kycLevel: user.kycLevel,
-      gender: user.gender, // Include gender in response
+      gender: user.gender,
     },
-  }); // Respond with user details, token, sponsor info, and sponsored users
+  });
 });
 
 // Function to handle forgot password request and send OTP
 const forgotPassword = asyncHandler(async (req, res) => {
-  // Extract email from request body
   const { email } = req.body;
   if (!email) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("Email is required"); // Throw error if email is missing
+    res.status(400);
+    throw new Error("Email is required");
   }
-  const user = await User.findOne({ email }); // Find user by email
+  const user = await User.findOne({ email });
   if (!user) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("User not found"); // Throw error if user doesn't exist
+    res.status(404);
+    throw new Error("User not found");
   }
-  const resetOtp = generateOTP(); // Generate OTP for password reset
+  const resetOtp = generateOTP();
   await User.findByIdAndUpdate(
     user._id,
-    { resetOtp, resetOtpExpires: Date.now() + 10 * 60 * 1000 }, // Set OTP and 10-minute expiry
+    { resetOtp, resetOtpExpires: Date.now() + 10 * 60 * 1000 },
     { new: true, runValidators: true }
   );
   await transporter.sendMail({
-    from: `"Your App" <${process.env.MAIL_USER}>`, // Sender email
-    to: email, // Recipient email
-    subject: "Your OTP for Password Reset", // Email subject
-    text: `Hello ${user.firstName} ${user.lastName},\nYour OTP for password reset is: ${resetOtp}\nPlease use this OTP within 10 minutes.`, // Plain text body
-    html: `<h2>Hello ${user.firstName} ${user.lastName},</h2><p>Your OTP is: <strong>${resetOtp}</strong></p><p>Use within 10 minutes.</p>`, // HTML body
+    from: `"Your App" <${process.env.MAIL_USER}>`,
+    to: email,
+    subject: "Your OTP for Password Reset",
+    text: `Hello ${user.firstName} ${user.lastName},\nYour OTP for password reset is: ${resetOtp}\nPlease use this OTP within 10 minutes.`,
+    html: `<h2>Hello ${user.firstName} ${user.lastName},</h2><p>Your OTP is: <strong>${resetOtp}</strong></p><p>Use within 10 minutes.</p>`,
   });
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
-  }); // Generate JWT token
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 }); // Set cookie with 1-hour expiry
-  res.status(200).json({ message: "Reset OTP sent to email", token }); // Respond with token
+  });
+  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.status(200).json({ message: "Reset OTP sent to email", token });
 });
 
 // Function to reset user password using OTP
 const resetPassword = asyncHandler(async (req, res) => {
-  // Extract data from request body
   const { userId, resetOtp, password } = req.body;
-  if (!userId || !resetOtp || !password) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("User ID, reset OTP, and password are required"); // Throw error if any field is missing
+  if (!userId) {
+    res.status(400);
+    throw new Error("User ID is required");
   }
-  const user = await User.findById(userId); // Find user by ID
+  if (!resetOtp) {
+    res.status(400);
+    throw new Error("Reset OTP is required");
+  }
+  if (!password) {
+    res.status(400);
+    throw new Error("Password is required");
+  }
+  const user = await User.findById(userId);
   if (!user) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("User not found"); // Throw error if user doesn't exist
+    res.status(404);
+    throw new Error("User not found");
   }
   if (
     user.resetOtp !== resetOtp ||
     !user.resetOtpExpires ||
     user.resetOtpExpires < Date.now()
   ) {
-    res.status(400); // Set status to 400 for invalid request
-    throw new Error("Invalid or expired reset OTP"); // Throw error if OTP is invalid or expired
+    res.status(400);
+    throw new Error("Invalid or expired reset OTP");
   }
-  user.password = password; // Update password
-  user.resetOtp = null; // Clear reset OTP
-  user.resetOtpExpires = null; // Clear expiry
-  await user.save(); // Save updated user document
+  user.password = password;
+  user.resetOtp = null;
+  user.resetOtpExpires = null;
+  await user.save();
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
-  }); // Generate JWT token
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 }); // Set cookie with 1-hour expiry
-  res.status(200).json({ message: "Password reset successful", token }); // Respond with token
+  });
+  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  res.status(200).json({ message: "Password reset successful", token });
 });
 
 // Function to handle KYC Level 1 submission
@@ -290,114 +343,126 @@ cloudinary.config({
   cloud_name: process.env.Cloud_Name,
   api_key: process.env.API_Key,
   api_secret: process.env.API_Secret,
-}); // Configure Cloudinary
+});
 const submitKYC = asyncHandler(async (req, res) => {
-  // Extract KYC data from request body
   const { userId, fullName, country, gender } = req.body;
   const frontImage = req.files?.frontImage;
   const backImage = req.files?.backImage;
-  const selfieImage = req.files?.selfieImage; // New field for live selfie
-  if (
-    !userId ||
-    !fullName ||
-    !country ||
-    !frontImage ||
-    !backImage ||
-    !selfieImage
-  ) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error(
-      "All fields including userId, full name, CNIC images, and selfie image are required"
-    ); // Throw error if any field is missing
+  const selfieImage = req.files?.selfieImage;
+  if (!userId) {
+    res.status(400);
+    throw new Error("User ID is required");
   }
-  const [firstName, lastName] = fullName.split(" ").filter(Boolean); // Split full name
+  if (!fullName) {
+    res.status(400);
+    throw new Error("Full name is required");
+  }
+  if (!country) {
+    res.status(400);
+    throw new Error("Country is required");
+  }
+  if (!frontImage) {
+    res.status(400);
+    throw new Error("Front image is required");
+  }
+  if (!backImage) {
+    res.status(400);
+    throw new Error("Back image is required");
+  }
+  if (!selfieImage) {
+    res.status(400);
+    throw new Error("Selfie image is required");
+  }
+  const [firstName, lastName] = fullName.split(" ").filter(Boolean);
   if (!firstName || !lastName) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("Full name must contain both first and last names"); // Throw error if name is invalid
+    res.status(400);
+    throw new Error("Full name must contain both first and last names");
   }
-  const user = await User.findById(userId); // Find user by ID
+  const user = await User.findById(userId);
   if (!user) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("User not found. Please provide a valid user ID."); // Throw error if user not found
+    res.status(404);
+    throw new Error("User not found. Please provide a valid user ID.");
   }
   const frontUpload = await cloudinary.uploader.upload(frontImage[0].path, {
     folder: "kyc/front",
-  }); // Upload front CNIC image
+  });
   const backUpload = await cloudinary.uploader.upload(backImage[0].path, {
     folder: "kyc/back",
-  }); // Upload back CNIC image
+  });
   const selfieUpload = await cloudinary.uploader.upload(selfieImage[0].path, {
     folder: "kyc/selfie",
-  }); // Upload selfie image
-  user.firstName = firstName; // Update first name
-  user.lastName = lastName; // Update last name
-  user.country = country; // Update country
-  user.gender = gender; // Update gender
+  });
+  user.firstName = firstName;
+  user.lastName = lastName;
+  user.country = country;
+  user.gender = gender;
   user.cnicImages = {
-    front: frontUpload.secure_url, // Store front CNIC URL
-    back: backUpload.secure_url, // Store back CNIC URL
+    front: frontUpload.secure_url,
+    back: backUpload.secure_url,
   };
-  user.selfieImage = selfieUpload.secure_url; // Store selfie URL
-  user.kycLevel = 1; // Set KYC level to 1
-  await user.save(); // Save updated user document
+  user.selfieImage = selfieUpload.secure_url;
+  user.kycLevel = 1;
+  await user.save();
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1h",
-  }); // Generate JWT token
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 }); // Set cookie with 1-hour expiry
+  });
+  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
   res
     .status(200)
-    .json({ message: "KYC Level 1 completed successfully", token }); // Respond with token
+    .json({ message: "KYC Level 1 completed successfully", token });
 });
 
 // Handle user logout by clearing the token cookie
 const logout = async (req, res) => {
   try {
-    // Clear the token cookie
     res.clearCookie("token", { httpOnly: true, maxAge: 0 });
     res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
-    res.status(500).json({ message: error.message, token: req.cookies.token }); // Respond with error
+    res.status(500).json({ message: error.message, token: req.cookies.token });
   }
 };
 
 // Function to resend OTP to user's email
 const resendOtp = asyncHandler(async (req, res) => {
-  // Extract tempId from request body
-  const { tempId } = req.body;
-  if (!tempId) {
-    res.status(400); // Set status to 400 for bad request
-    throw new Error("tempId is required"); // Throw error if tempId is missing
+  const { email } = req.body;
+  if (!email) {
+    res.status(400);
+    throw new Error("Email is required");
   }
-  const tempUser = await TempUser.findOne({ tempId }); // Find temporary user by tempId
-  if (!tempUser) {
-    res.status(404); // Set status to 404 for not found
-    throw new Error("Invalid or expired temporary session"); // Throw error if tempUser not found
+  const user = await User.findOne({ email });
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
   }
-  const newOtp = generateOTP(); // Generate new OTP
-  tempUser.otp = newOtp; // Update OTP in tempUser document
-  await tempUser.save(); // Save updated tempUser document
+  if (user.isVerified) {
+    res.status(400);
+    throw new Error("User is already verified");
+  }
+  const newOtp = generateOTP();
+  const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+  user.otp = newOtp;
+  user.otpExpires = otpExpires;
+  await user.save();
   await transporter.sendMail({
-    from: `"Your App" <${process.env.MAIL_USER}>`, // Sender email
-    to: tempUser.email, // Recipient email
-    subject: "Your New OTP for Account Verification", // Email subject
-    text: `Hello ${firstName} ${lastName},\nYour new OTP for account verification is: ${newOtp}\nPlease enter this OTP to verify within 10 minutes.`, // Plain text body
-    html: `<h2>Hello ${firstName} ${lastName},</h2><p>Your new OTP is: <strong>${newOtp}</strong></p><p>Verify within 10 minutes.</p>`, // HTML body
+    from: `"Your App" <${process.env.MAIL_USER}>`,
+    to: email,
+    subject: "Your New OTP for Account Verification",
+    text: `Hello ${user.firstName} ${user.lastName},\nYour new OTP for account verification is: ${newOtp}\nPlease enter this OTP to verify within 10 minutes.`,
+    html: `<h2>Hello ${user.firstName} ${user.lastName},</h2><p>Your new OTP is: <strong>${newOtp}</strong></p><p>Verify within 10 minutes.</p>`,
   });
-  res.status(200).json({ message: "New OTP sent successfully", tempId }); // Respond with tempId
+  res.status(200).json({ message: "New OTP sent successfully" });
 });
 
 // Helper function to update sponsor levels recursively
 async function updateSponsorLevels(userId) {
-  const user = await User.findById(userId); // Find user by ID
+  const user = await User.findById(userId);
   if (!user) return;
 
-  // Count direct referrals (level 1)
   const directReferrals = user.sponsorTree.length;
   if (directReferrals >= 3 && user.level < 1) {
     user.level = 1;
   }
 
-  // Check deeper levels
   const allReferrals = await User.find({ sponsorBy: user.sponsorId });
   let totalLevel2Referrals = 0;
   for (const referral of allReferrals) {
@@ -452,12 +517,10 @@ async function updateSponsorLevels(userId) {
     user.level = 4;
   }
 
-  // Cap level at 4
   if (user.level > 4) user.level = 4;
   await user.save();
 
-  // Recursively update sponsors
-  if (user.sponsorBy !== "root") {
+  if (user.sponsorBy && user.sponsorBy !== "root") {
     const parentSponsor = await User.findOne({ sponsorId: user.sponsorBy });
     if (parentSponsor) {
       await updateSponsorLevels(parentSponsor._id);

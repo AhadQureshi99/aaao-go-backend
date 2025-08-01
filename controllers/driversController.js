@@ -401,8 +401,6 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-
-
 // Export all controller functions
 export {
   uploadLicense,
@@ -411,5 +409,4 @@ export {
   updateVehicle,
   getUserVehicleInfo,
   getCurrentUser,
-  
 };

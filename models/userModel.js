@@ -1,6 +1,7 @@
 // Importing required modules for MongoDB schema definition and password hashing
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
+import { v4 as uuidv4 } from "uuid"; // Import uuid for unique sponsorId
 
 // Defining the user schema with validation rules
 const userSchema = new mongoose.Schema({
@@ -38,9 +39,7 @@ const userSchema = new mongoose.Schema({
     unique: true, // Ensures sponsorId is unique
     required: true, // Sponsor ID is mandatory
     default: function () {
-      return `${this._id.toString().slice(-6)}${Date.now()
-        .toString()
-        .slice(-4)}`; // Generate unique sponsor ID
+      return `${uuidv4().split("-")[0]}-${Date.now().toString().slice(-6)}`; // Use part of uuidv4 and timestamp for uniqueness
     },
   },
   sponsorTree: {
@@ -55,7 +54,6 @@ const userSchema = new mongoose.Schema({
   },
   sponsorBy: {
     type: String,
-    required: [true, "Sponsor is required"], // Ensures sponsor is provided
     trim: true, // Removes leading/trailing whitespace
   },
   country: {
@@ -88,6 +86,10 @@ const userSchema = new mongoose.Schema({
   otp: {
     type: String,
     default: null, // Stores one-time password for verification
+  },
+  otpExpires: {
+    type: Date, // Expiration time for OTP
+    default: null,
   },
   isVerified: {
     type: Boolean,

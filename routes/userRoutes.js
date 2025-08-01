@@ -22,18 +22,18 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage }); // Initialize multer with storage configuration
 
-// Route to handle user signup (no authentication required for initial signup)
+// Route to handle initial signup (send OTP)
 const router = express.Router();
 router.post("/signup", signupUser);
 
-// Route to verify OTP for user account, requiring authentication
-router.post("/verify-otp", verifyOTPUser);
+// Route to handle OTP verification and full registration
+router.post("/verify-otp", verifyOTPUser); // Renamed from /register
 
 // Route to handle user login (no authentication required for initial login)
 router.post("/login", loginUser);
 
-// Route to handle forgot password request, requiring authentication
-router.post("/forgot-password", authHandler, forgotPassword);
+// Route to handle forgot password request, no authentication required
+router.post("/forgot-password", forgotPassword);
 
 // Route to reset user password, requiring authentication
 router.post("/reset-password", authHandler, resetPassword);
@@ -52,8 +52,8 @@ router.post(
 
 router.post("/logout", authHandler, logout);
 
-// Route to resend OTP to user's email, requiring authentication
-router.post("/resend-otp", resendOtp);
+// Route to resend OTP to user's email, requiring no authentication
+router.post("/resend-otp", resendOtp); // Keep as is
 
 // Export router for use in main application
 export default router;
