@@ -236,7 +236,7 @@ const loginUser = asyncHandler(async (req, res) => {
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRY,
   });
-  res.cookie("token", token, { httpOnly: true, maxAge: 3600000 });
+  
   const sponsoredUsers = user.sponsorTree
     .map((s) => `${s.firstName} ${s.lastName}`)
     .join(", ");
@@ -245,7 +245,9 @@ const loginUser = asyncHandler(async (req, res) => {
     const sponsor = await User.findOne({ sponsorId: user.sponsorBy });
     sponsorName = sponsor ? `${sponsor.firstName} ${sponsor.lastName}` : null;
   }
-  res.status(200).json({
+  res
+  .cookie("token", token, { httpOnly: true, maxAge: 3600000 })
+  .status(200).json({
     message: "Login successful",
     token,
     userId: user._id,
